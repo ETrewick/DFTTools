@@ -20,10 +20,7 @@ def main():
         For testing, this line is helpful:
     '''
 
-
-
     # load a starting point from QE (we need the 5d electron density matrix)
-    # qe_occup_fname = '/home/ludoric/Documents/PhD_stuff/QE/forDavidTam/SmN_paw/out/SmN_paw.save/occup.txt'
     path_prefix='/home/ludoric/Documents/PhD_stuff/quanty/QE_calc_from_quanty/'
     qe_occup_fname = path_prefix+'SmN_paw/it2_edited-occup.txt'
     qe_dens_4f, qe_dens_5d = readocc_4f_5d(qe_occup_fname)
@@ -39,11 +36,8 @@ def main():
 
     
     # note that the QE and Quanty arrays use different basis functions, so we must perform a rotation between them
-    R_quanty2qe = make_R_quanty2qe()
-
-
-    quanty_4f_dens_in_qe = R_quanty2qe@quanty_4f_dens@R_quanty2qe.conj().T
-    # additionally QE wants this to be all real (loose all angular momentum
+    quanty_4f_dens_in_qe = convertquanty2qe(quanty_4f_dens)
+    # additionally QE wants this to be all real (lose all angular momentum?)
     quanty_4f_dens_in_qe_real = 0.5 * (quanty_4f_dens_in_qe + quanty_4f_dens_in_qe.conj())
 
     # check that the rotation and plotting works correctly
@@ -51,13 +45,13 @@ def main():
     qu_figs2 = plot_eigenvectors(qu_E, qu_R, 'QE', npts=50, fname=None, title='quanty in QE format')
 
     # write the bloody thing back out for QE
-    qe_occup_out_fname = './occup.txt-output' # '~/Documents/PhD_stuff/QE/forDavidTam/SmN_paw/out/SmN_paw.save/occup.txt'
+    qe_occup_out_fname = path_prefix+'occup.txt-output'
     writeocc_4f_5d(qe_occup_out_fname, quanty_4f_dens_in_qe_real, qe_dens_5d)
 
 
     # try not to cry when it doesn't work
-    
 
+    # qu_figs2 = plot_density(quanty_4f_dens, 'quanty', npts=50, fname=None)
 
     plt.show()
 
@@ -70,63 +64,63 @@ def main():
 ''' from the log file '''
 
 def parse_eigen_data_4spin(text):
-    ''' Reading the 4spin hubbard matricies from the modified output of quantum espresso 
-        Expects 'text' to be just a block of the normal output from QE, i.e.:
+    '''
+    Reading the 4spin hubbard matricies from the modified output of quantum espresso 
+    This requires a patch to QE to get it to work:
+        https://gist.github.com/ETrewick/bd995760a8e44b2617e8639f092a3a43
+    Expects 'text' to be just a block of the normal output from QE, i.e.:
 
-     ================= HUBBARD OCCUPATIONS ================
-     ------------------------ ATOM    1 ------------------------
-     Tr[ns(  1)] (up, down, total) =   6.48034  0.01465  6.49499
-     eigenvalues:
-       0.000  0.001  0.001  0.001  0.003  0.003  0.003  0.816  0.888  0.891  0.962  0.967  0.973  0.987
-     eigenvectors (columns):
-       0.000 -0.000 -0.000  0.000  0.000  0.000 -0.000  0.000  0.003  0.001  0.000 -0.000  0.000  0.000
-       0.011 -0.000  0.004  0.000 -0.000 -0.002  0.000 -0.032  0.002 -0.108  0.001  0.386 -0.105 -0.000
-      -0.006  0.000 -0.012  0.000  0.000  0.019 -0.000 -0.240 -0.008  0.576  0.000  0.540 -0.380  0.000
-       0.000  0.000  0.000 -0.000 -0.000 -0.000  0.000  0.000 -0.000 -0.000 -0.000  0.000  0.000  0.000
-      -0.000 -0.022 -0.000  0.000 -0.001  0.000 -0.000  0.000 -0.000 -0.000 -0.389  0.000  0.000 -0.921
-       0.008  0.000 -0.003 -0.000 -0.000  0.000 -0.000  0.089 -0.002  0.073  0.000  0.141 -0.156 -0.000
-       0.005  0.000 -0.008  0.000  0.000  0.001  0.000 -0.658 -0.006  0.388  0.000 -0.198  0.565 -0.000
-      -0.000  0.000 -0.000 -0.000  0.000  0.122 -0.000 -0.001  0.000  0.000  0.000  0.015  0.000 -0.000
-       0.000 -0.000 -0.000  0.000  0.000  0.000 -0.000 -0.000 -0.000 -0.000 -0.000  0.000  0.000 -0.000
-      -0.000  0.559  0.001  0.565 -0.432  0.001 -0.425  0.000 -0.020 -0.000  0.007 -0.000 -0.000 -0.016
-      -0.012 -0.001  0.333  0.000  0.000  0.000  0.000 -0.000 -0.000  0.004 -0.000 -0.000 -0.000 -0.000
-      -0.504  0.000 -0.013 -0.000  0.000  0.000 -0.000  0.000  0.000 -0.007  0.000 -0.000  0.020 -0.000
-       0.000 -0.000 -0.000  0.000 -0.001 -0.000  0.001 -0.000  0.000  0.000  0.000 -0.000  0.000  0.000
-       0.000 -0.432 -0.000 -0.425 -0.559  0.001 -0.566 -0.000 -0.001 -0.000  0.013 -0.000 -0.000  0.005
-     occupations, | n_(i1, i2)^(sigma1, sigma2) | real part |:
-       0.887  0.000  0.000  0.000 -0.000 -0.000  0.000 -0.000 -0.017 -0.000 -0.000  0.000  0.001  0.000
-       0.000  0.932  0.000 -0.000 -0.000  0.043  0.000  0.018 -0.000  0.000 -0.011 -0.000  0.000  0.000
-       0.000  0.000  0.932  0.000  0.000 -0.000 -0.043 -0.000 -0.000 -0.000 -0.000 -0.012  0.000 -0.000
-       0.000 -0.000  0.000  0.965  0.000 -0.000  0.000 -0.000  0.012 -0.000 -0.000 -0.000 -0.009 -0.000
-      -0.000 -0.000  0.000  0.000  0.983  0.000  0.000  0.000  0.000  0.012  0.000  0.000 -0.000 -0.010
-      -0.000  0.043 -0.000 -0.000  0.000  0.890 -0.000  0.000  0.000 -0.000  0.008  0.000  0.000 -0.000
-       0.000  0.000 -0.043  0.000  0.000 -0.000  0.890 -0.000 -0.000  0.000 -0.000  0.009  0.000  0.000
-      -0.000  0.018 -0.000 -0.000  0.000  0.000 -0.000  0.003 -0.000  0.000 -0.000  0.000  0.000  0.000
-      -0.017 -0.000 -0.000  0.012  0.000  0.000 -0.000 -0.000  0.002  0.000  0.000 -0.000 -0.001  0.000
-      -0.000  0.000 -0.000 -0.000  0.012 -0.000  0.000  0.000  0.000  0.002 -0.000 -0.000 -0.000  0.001
-      -0.000 -0.011 -0.000 -0.000  0.000  0.008 -0.000 -0.000  0.000 -0.000  0.001  0.000  0.000 -0.000
-       0.000 -0.000 -0.012 -0.000  0.000  0.000  0.009  0.000 -0.000 -0.000  0.000  0.000 -0.000  0.000
-       0.001  0.000  0.000 -0.009 -0.000  0.000  0.000  0.000 -0.001 -0.000  0.000 -0.000  0.002 -0.000
-       0.000  0.000 -0.000 -0.000 -0.010 -0.000  0.000  0.000  0.000  0.001 -0.000  0.000 -0.000  0.002
-     occupations, | n_(i1, i2)^(sigma1, sigma2) | imag part |:
-      -0.000 -0.000  0.000  0.000  0.000  0.000 -0.000  0.000 -0.000 -0.017  0.000  0.000 -0.000 -0.001
-       0.000 -0.000 -0.016  0.000 -0.000 -0.000  0.005  0.000 -0.000 -0.000  0.000 -0.012  0.000 -0.000
-      -0.000  0.016 -0.000 -0.000  0.000  0.005 -0.000  0.018  0.000 -0.000  0.011  0.000 -0.000 -0.000
-      -0.000 -0.000  0.000 -0.000 -0.009  0.000  0.000  0.000  0.000 -0.012  0.000  0.000 -0.000 -0.009
-      -0.000  0.000 -0.000  0.009 -0.000 -0.000 -0.000  0.000  0.012  0.000  0.000 -0.000  0.010  0.000
-      -0.000  0.000 -0.005 -0.000  0.000  0.000 -0.056 -0.000 -0.000  0.000  0.000 -0.009  0.000  0.000
-       0.000 -0.005  0.000 -0.000  0.000  0.056 -0.000 -0.000 -0.000 -0.000  0.008 -0.000 -0.000 -0.000
-      -0.000 -0.000 -0.018 -0.000 -0.000  0.000  0.000 -0.000 -0.000  0.000  0.000  0.000 -0.000  0.000
-       0.000  0.000 -0.000 -0.000 -0.012  0.000  0.000  0.000 -0.000  0.000 -0.000 -0.000  0.000  0.000
-       0.017  0.000  0.000  0.012 -0.000 -0.000  0.000 -0.000 -0.000 -0.000 -0.000 -0.000  0.000  0.000
-      -0.000 -0.000 -0.011 -0.000 -0.000 -0.000 -0.008 -0.000  0.000  0.000  0.000  0.000 -0.000  0.000
-      -0.000  0.012 -0.000 -0.000  0.000  0.009  0.000 -0.000  0.000  0.000 -0.000 -0.000  0.000  0.000
-       0.000 -0.000  0.000  0.000 -0.010 -0.000  0.000  0.000 -0.000 -0.000  0.000 -0.000 -0.000  0.000
-       0.001  0.000  0.000  0.009 -0.000 -0.000  0.000 -0.000 -0.000 -0.000 -0.000 -0.000 -0.000  0.000
-     Atomic magnetic moment mx, my, mz =    -0.000003   -0.000001    6.465695
-
-     Number of occupied Hubbard levels =    6.4950
-
+        ================= HUBBARD OCCUPATIONS ================
+        ------------------------ ATOM    1 ------------------------
+        Tr[ns(  1)] (up, down, total) =   6.48034  0.01465  6.49499
+        eigenvalues:
+          0.000  0.001  0.001  0.001  0.003  0.003  0.003  0.816  0.888  0.891  0.962  0.967  0.973  0.987
+        eigenvectors (columns):
+          0.000 -0.000 -0.000  0.000  0.000  0.000 -0.000  0.000  0.003  0.001  0.000 -0.000  0.000  0.000
+          0.011 -0.000  0.004  0.000 -0.000 -0.002  0.000 -0.032  0.002 -0.108  0.001  0.386 -0.105 -0.000
+         -0.006  0.000 -0.012  0.000  0.000  0.019 -0.000 -0.240 -0.008  0.576  0.000  0.540 -0.380  0.000
+          0.000  0.000  0.000 -0.000 -0.000 -0.000  0.000  0.000 -0.000 -0.000 -0.000  0.000  0.000  0.000
+         -0.000 -0.022 -0.000  0.000 -0.001  0.000 -0.000  0.000 -0.000 -0.000 -0.389  0.000  0.000 -0.921
+          0.008  0.000 -0.003 -0.000 -0.000  0.000 -0.000  0.089 -0.002  0.073  0.000  0.141 -0.156 -0.000
+          0.005  0.000 -0.008  0.000  0.000  0.001  0.000 -0.658 -0.006  0.388  0.000 -0.198  0.565 -0.000
+         -0.000  0.000 -0.000 -0.000  0.000  0.122 -0.000 -0.001  0.000  0.000  0.000  0.015  0.000 -0.000
+          0.000 -0.000 -0.000  0.000  0.000  0.000 -0.000 -0.000 -0.000 -0.000 -0.000  0.000  0.000 -0.000
+         -0.000  0.559  0.001  0.565 -0.432  0.001 -0.425  0.000 -0.020 -0.000  0.007 -0.000 -0.000 -0.016
+         -0.012 -0.001  0.333  0.000  0.000  0.000  0.000 -0.000 -0.000  0.004 -0.000 -0.000 -0.000 -0.000
+         -0.504  0.000 -0.013 -0.000  0.000  0.000 -0.000  0.000  0.000 -0.007  0.000 -0.000  0.020 -0.000
+          0.000 -0.000 -0.000  0.000 -0.001 -0.000  0.001 -0.000  0.000  0.000  0.000 -0.000  0.000  0.000
+          0.000 -0.432 -0.000 -0.425 -0.559  0.001 -0.566 -0.000 -0.001 -0.000  0.013 -0.000 -0.000  0.005
+        occupations, | n_(i1, i2)^(sigma1, sigma2) | real part |:
+          0.887  0.000  0.000  0.000 -0.000 -0.000  0.000 -0.000 -0.017 -0.000 -0.000  0.000  0.001  0.000
+          0.000  0.932  0.000 -0.000 -0.000  0.043  0.000  0.018 -0.000  0.000 -0.011 -0.000  0.000  0.000
+          0.000  0.000  0.932  0.000  0.000 -0.000 -0.043 -0.000 -0.000 -0.000 -0.000 -0.012  0.000 -0.000
+          0.000 -0.000  0.000  0.965  0.000 -0.000  0.000 -0.000  0.012 -0.000 -0.000 -0.000 -0.009 -0.000
+         -0.000 -0.000  0.000  0.000  0.983  0.000  0.000  0.000  0.000  0.012  0.000  0.000 -0.000 -0.010
+         -0.000  0.043 -0.000 -0.000  0.000  0.890 -0.000  0.000  0.000 -0.000  0.008  0.000  0.000 -0.000
+          0.000  0.000 -0.043  0.000  0.000 -0.000  0.890 -0.000 -0.000  0.000 -0.000  0.009  0.000  0.000
+         -0.000  0.018 -0.000 -0.000  0.000  0.000 -0.000  0.003 -0.000  0.000 -0.000  0.000  0.000  0.000
+         -0.017 -0.000 -0.000  0.012  0.000  0.000 -0.000 -0.000  0.002  0.000  0.000 -0.000 -0.001  0.000
+         -0.000  0.000 -0.000 -0.000  0.012 -0.000  0.000  0.000  0.000  0.002 -0.000 -0.000 -0.000  0.001
+         -0.000 -0.011 -0.000 -0.000  0.000  0.008 -0.000 -0.000  0.000 -0.000  0.001  0.000  0.000 -0.000
+          0.000 -0.000 -0.012 -0.000  0.000  0.000  0.009  0.000 -0.000 -0.000  0.000  0.000 -0.000  0.000
+          0.001  0.000  0.000 -0.009 -0.000  0.000  0.000  0.000 -0.001 -0.000  0.000 -0.000  0.002 -0.000
+          0.000  0.000 -0.000 -0.000 -0.010 -0.000  0.000  0.000  0.000  0.001 -0.000  0.000 -0.000  0.002
+        occupations, | n_(i1, i2)^(sigma1, sigma2) | imag part |:
+         -0.000 -0.000  0.000  0.000  0.000  0.000 -0.000  0.000 -0.000 -0.017  0.000  0.000 -0.000 -0.001
+          0.000 -0.000 -0.016  0.000 -0.000 -0.000  0.005  0.000 -0.000 -0.000  0.000 -0.012  0.000 -0.000
+         -0.000  0.016 -0.000 -0.000  0.000  0.005 -0.000  0.018  0.000 -0.000  0.011  0.000 -0.000 -0.000
+         -0.000 -0.000  0.000 -0.000 -0.009  0.000  0.000  0.000  0.000 -0.012  0.000  0.000 -0.000 -0.009
+         -0.000  0.000 -0.000  0.009 -0.000 -0.000 -0.000  0.000  0.012  0.000  0.000 -0.000  0.010  0.000
+         -0.000  0.000 -0.005 -0.000  0.000  0.000 -0.056 -0.000 -0.000  0.000  0.000 -0.009  0.000  0.000
+          0.000 -0.005  0.000 -0.000  0.000  0.056 -0.000 -0.000 -0.000 -0.000  0.008 -0.000 -0.000 -0.000
+         -0.000 -0.000 -0.018 -0.000 -0.000  0.000  0.000 -0.000 -0.000  0.000  0.000  0.000 -0.000  0.000
+          0.000  0.000 -0.000 -0.000 -0.012  0.000  0.000  0.000 -0.000  0.000 -0.000 -0.000  0.000  0.000
+          0.017  0.000  0.000  0.012 -0.000 -0.000  0.000 -0.000 -0.000 -0.000 -0.000 -0.000  0.000  0.000
+         -0.000 -0.000 -0.011 -0.000 -0.000 -0.000 -0.008 -0.000  0.000  0.000  0.000  0.000 -0.000  0.000
+         -0.000  0.012 -0.000 -0.000  0.000  0.009  0.000 -0.000  0.000  0.000 -0.000 -0.000  0.000  0.000
+          0.000 -0.000  0.000  0.000 -0.010 -0.000  0.000  0.000 -0.000 -0.000  0.000 -0.000 -0.000  0.000
+          0.001  0.000  0.000  0.009 -0.000 -0.000  0.000 -0.000 -0.000 -0.000 -0.000 -0.000 -0.000  0.000
+        Atomic magnetic moment mx, my, mz =    -0.000003   -0.000001    6.465695
     '''
     lines = text.strip().splitlines()
     
@@ -223,9 +217,14 @@ def parse_eigen_data_2spin(text):
 
 
 def plot2s(text):
-        plot_eigenvectors_QEorder(*parse_eigen_data_2spin(text)[:2], npts=50, fname=None); plt.show()
+        plot_eigenvectors(*parse_eigen_data_2spin(text)[:2], 'QE', npts=50, fname=None); plt.show()
 
-''' directly from the ouput data'''
+'''
+    Functions to directly read and write the density matrix of QE (occup.txt)
+    These functions are designed to be paired with 
+    https://gist.github.com/ETrewick/0b4b484a2e680e94b11d3fe4ce74d27d
+    Which allows the starting density matrix to be set with one from quanty
+'''
 def readocc_4spin(fname, ndim):
     # ndim = l*2+1
     # for 4f orbitals ndim = 4*2+1 = 7
@@ -393,6 +392,13 @@ def make_R_quanty2qe():
     # print(np.allclose(result.conj().T @ result, np.eye(14)))
     return rot
 
+def convertquanty2qe(quanty_dens):
+    R_quanty2qe = make_R_quanty2qe() 
+    return R_quanty2qe@quanty_dens@R_quanty2qe.conj().T
+
+def convertqe2quanty(qe_dens):
+    R_quanty2qe = make_R_quanty2qe() 
+    return R_quanty2qe.conj().T@qe_dens@R_quanty2qe
 
 def make_diagonal(O):
     EO, RO = np.linalg.eig(O)
@@ -521,229 +527,35 @@ def plot_eigenvectors(occupations, funcs_right, format='QE', npts=50, fname=None
     
     return fig, fig2
 
-
-
-# def plot_eigenvectors_QEorder(occupations, funcs_right, npts=50, fname=None, title='QE'):
-#     ''' plots the eigenvectors that diagonalise a density matrix, and the whole density matrix
-#         Assumes the vectors are in "QE order"
-#     '''
-#     fig, axes = plt.subplots(figsize=(14,5), ncols=5, nrows=3, subplot_kw={'projection': '3d'})
-#     
-#     theta = np.linspace(0, np.pi, npts)     # polar angle
-#     phi = np.linspace(0, 2 * np.pi, npts)   # azimuthaSm_06_+167,+005_Density_matrix_XYZ.txtl angle
-#     theta, phi = np.meshgrid(theta, phi)
-#     orbs = [ 0, 1,-1, 2,-2, 3,-3, 0, 1,-1, 2,-2, 3,-3]
-#     spin = [ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1]
-#     
-#     
-#     
-#     axlist = [ax for axrow in axes for ax in axrow]
-#     
-#     r_total = np.zeros_like(theta, dtype=complex)
-#     s_total = np.zeros_like(theta, dtype=complex)
-#     
-#     for ax, occ, vec in zip(axlist, occupations, funcs_right.T):
-#         # yup = np.zeros_like(theta, dtype=complex)
-#         # ydw = np.zeros_like(theta, dtype=complex)
-#         # for ml, ms, coeff in zip(orbs, spin, vec):
-#         #     y = coeff * sph_harm_y(3, ml, theta, phi)
-#         #     if ms == +1:
-#         #         yup += y
-#         #     elif ms == -1:
-#         #         ydw += y
-#         # 
-#         # r = np.abs(yup)**2 + np.abs(ydw)**2
-#         # s = (np.abs(yup)**2 - np.abs(ydw)**2)
-#     
-#         ys = np.zeros_like(theta, dtype=complex)
-#         ss = np.zeros_like(theta, dtype=complex)
-#         ls = np.zeros_like(theta, dtype=complex)
-#         for ml, ms, coeff in zip(orbs, spin, vec):
-#             if ml < 0:
-#                 harm = np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).imag
-#             elif ml == 0:
-#                 harm = sph_harm_y(3, 0, theta, phi).real
-#             elif ml > 0:
-#                 harm = np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).real
-#             yc = coeff * harm
-#             ys += yc
-#             ss += ms*yc
-#             ls += ml*yc
-#         
-#         r = (ys.conj()*ys).real
-#         s = (ys.conj()*ss)  # not real and positive, but it's integral is
-#         r_total += r.real*occ.real
-#         s_total += s.real*occ.real
-#         x = r * np.sin(theta) * np.cos(phi)
-#         y = r * np.sin(theta) * np.sin(phi)
-#         z = r * np.cos(theta)
-#     
-#         norm = plt.Normalize(vmin=-1, vmax=1)
-#         # norm = plt.Normalize(vmin=c.min(), vmax=c.max())
-#         surf = ax.plot_surface(x, y, z,
-#                                rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.bwr(norm(s.real)),
-#                                antialiased=False)
-#         ax.set_xlim([-0.5,0.5])
-#         ax.set_ylim([-0.5,0.5])
-#         ax.set_zlim([-0.5,0.5])
-#         
-#         ax.set_title(f'eig:{occ.real:.3f}')
-#         ax.set_aspect('equal')
-#     
-#     ax = axlist[-1]    
-#     
-#     # r_total = np.square(r_total/2)
-#     fig2, ax2 = plt.subplots(figsize=(5,5), ncols=1, nrows=1, subplot_kw={'projection': '3d'})
-#     for ax in (axlist[-1], ax2):
-#         # r_total_total-=0.25
-#         x = r_total * np.sin(theta) * np.cos(phi)
-#         y = r_total * np.sin(theta) * np.sin(phi)
-#         z = r_total * np.cos(theta)
-#         
-#         # norm = plt.Normalize(vmin=-1, vmax=1)
-#         norm_s = plt.Normalize(vmin=np.min(s_total.real), vmax=np.max(s_total.real))
-#         mmm = np.max(np.abs(s_total.real))
-#         norm = plt.Normalize(vmin=-mmm, vmax=mmm)
-#         surf = ax.plot_surface(x, y, z,
-#                                # rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.bwr(norm(s_total.real)),
-#                                # rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.viridis(norm_s(s_total.real)),
-#                                rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.viridis(norm_s(r_total.real)),
-#                                antialiased=False)
-#         # print(np.max(s_total.real), np.min(s_total.real))
-#         # lim = 0.55
-#         lim = max((np.max(np.abs(a)) for a in (x,y,z)))
-#         ax.set_xlim([-lim,lim])
-#         ax.set_ylim([-lim,lim])
-#         ax.set_zlim([-lim,lim])
-#         
-#         # ax.set_title(f'eig:{np.sum(occupations).real:.3f}')
-#         ax.set_aspect('equal')
-#     
-#     ax2.set_axis_off()
-#     fig2.colorbar(plt.cm.ScalarMappable(norm=norm_s, cmap=plt.cm.viridis), ax=ax2)
-#     title and fig.suptitle(title)
-#     title and fig2.suptitle(title)
-#     # fig2.savefig(dens_full_file.split['.'][0] + '-charge.pdf')
-#     # fig2.savefig(dens_full_file.split('.')[-2].replace('/','') + '-charge_edit.png', dpi=200)
-#     fname and fig2.savefig(fname+ '-charge_edit.pdf')
-#     fname and fig2.savefig(fname+ '-charge_edit.png', dpi=200)
-# 
-# 
-#     return fig, fig2
-# 
-# 
-# def plot_eigenvectors_quantyorder(occupations, funcs_right, npts=50, fname=None, title='Quanty'):
-#     ''' plots the eigenvectors that diagonalise a density matrix, and the whole density matrix
-#         Assumes the vectors are in "Quanty order"
-#     '''
-#     fig, axes = plt.subplots(figsize=(14,5), ncols=5, nrows=3, subplot_kw={'projection': '3d'})
-#     
-#     theta = np.linspace(0, np.pi, npts)     # polar angle
-#     phi = np.linspace(0, 2 * np.pi, npts)   # azimuthaSm_06_+167,+005_Density_matrix_XYZ.txtl angle
-#     theta, phi = np.meshgrid(theta, phi)
-#     orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
-#     spin = np.array([ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1])/2
-# 
-#     axlist = [ax for axrow in axes for ax in axrow]
-#     
-#     r_total = np.zeros_like(theta, dtype=complex)
-#     s_total = np.zeros_like(theta, dtype=complex)
-#     
-#     for ax, occ, vec in zip(axlist, occupations, funcs_right):
-#         # yup = np.zeros_like(theta, dtype=complex)
-#         # ydw = np.zeros_like(theta, dtype=complex)
-#         # for ml, ms, coeff in zip(orbs, spin, vec):
-#         #     y = coeff * sph_harm_y(3, ml, theta, phi)
-#         #     if ms == +1:
-#         #         yup += y
-#         #     elif ms == -1:
-#         #         ydw += y
-#         # 
-#         # r = np.abs(yup)**2 + np.abs(ydw)**2
-#         # s = (np.abs(yup)**2 - np.abs(ydw)**2)
-#     
-#         ys = np.zeros_like(theta, dtype=complex)
-#         ss = np.zeros_like(theta, dtype=complex)
-#         ls = np.zeros_like(theta, dtype=complex)
-#         for ml, ms, coeff in zip(orbs, spin, vec):
-#             yc = coeff * sph_harm_y(3, ml, theta, phi)
-#             ys += yc
-#             ss += ms*yc
-#             ls += ml*yc
-#         
-#         r = (ys.conj()*ys).real
-#         s = (ys.conj()*ss)  # not real and positive, but it's integral is
-#         r_total += r.real*occ.real
-#         s_total += s*occ.real
-#         x = r * np.sin(theta) * np.cos(phi)
-#         y = r * np.sin(theta) * np.sin(phi)
-#         z = r * np.cos(theta)
-#     
-#         norm = plt.Normalize(vmin=-0.5, vmax=0.5)
-#         # norm = plt.Normalize(vmin=c.min(), vmax=c.max())
-#         surf = ax.plot_surface(x, y, z,
-#                                rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.bwr(norm(s.real)),
-#                                antialiased=False)
-# 
-#         lim = 0.5
-#         ax.set_xlim([-lim, lim])
-#         ax.set_ylim([-lim, lim])
-#         ax.set_zlim([-lim, lim])
-#         
-#         ax.set_title(f'eig:{occ.real:.3f}')
-#         ax.set_aspect('equal')
-#     
-#     
-#     ax = axlist[-1]    
-#     # print(s_total.imag.max())
-#     
-#     # r_total = np.square(r_total/2)
-#     fig2, ax2 = plt.subplots(figsize=(5,5), ncols=1, nrows=1, subplot_kw={'projection': '3d'})
-#     for ax in (axlist[-1], ax2):
-#         # r_total_total-=0.25
-#         x = r_total.real * np.sin(theta) * np.cos(phi)
-#         y = r_total.real * np.sin(theta) * np.sin(phi)
-#         z = r_total.real * np.cos(theta)
-#         
-#         # norm = plt.Normalize(vmin=-1, vmax=1)
-#         norm_s = plt.Normalize(vmin=np.min(r_total.real), vmax=np.max(r_total.real))
-#         # mmm = np.max(np.abs(s_total.real))
-#         # norm = plt.Normalize(vmin=-mmm, vmax=mmm)
-#         surf = ax.plot_surface(x, y, z,
-#                                # rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.bwr(norm(s_total.real)),
-#                                # rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.viridis(norm_s(s_total.real)),
-#                                rstride=1, cstride=1, linewidth=0, facecolors=plt.cm.viridis(norm_s(r_total.real)),
-#                                antialiased=False)
-#         lim = max((np.max(np.abs(a)) for a in (x,y,z)))
-#         # lim = 0.55
-#         ax.set_xlim([-lim,lim])
-#         ax.set_ylim([-lim,lim])
-#         ax.set_zlim([-lim,lim])
-#         
-#         # ax.set_title(f'eig:{np.sum(occupations).real:.3f}')
-#         ax.set_aspect('equal')
-#     
-#     ax2.set_axis_off()
-#     fig2.colorbar(plt.cm.ScalarMappable(norm=norm_s, cmap=plt.cm.viridis), ax=ax2)
-#     title and fig.suptitle(title)
-#     title and fig2.suptitle(title)
-#     # fig2.savefig(dens_full_file.split['.'][0] + '-charge.pdf')
-#     fname and fig2.savefig(fname + '-charge_edit.pdf')
-#     fname and fig2.savefig(fname + '-charge_edit.png', dpi=200)
-#     
-#     return fig, fig2
-    
-def plot_density_quantyorder(full_dens, npts=50, fname=None, title='Quanty'):
+def plot_density(full_dens, format='QE', npts=50, fname=None, title=None):
     ''' plots the the whole density matrix
-        Assumes the vectors are in "Quanty order"
+        format must be one of 'QE' or 'quanty'
+        fname is the prefix of the output file
+        title is the plot title, defaults to 'format'
+        npts species the number of points in each direction of the angular mesh
     '''
-    theta = np.linspace(0, np.pi, npts)     # polar angle
-    phi = np.linspace(0, 2 * np.pi, npts)   # azimuthaSm_06_+167,+005_Density_matrix_XYZ.txtl angle
-    theta, phi = np.meshgrid(theta, phi)
-    orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
-    spin = np.array([ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1])/2
+    title = title or format
+    if format == 'QE':
+        orbs = [ 0, 1,-1, 2,-2, 3,-3, 0, 1,-1, 2,-2, 3,-3]
+        spin = np.array([ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1])/2
+        def harm(ml, theta, phi):
+            if ml < 0:
+                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).imag
+            elif ml == 0:
+                return sph_harm_y(3, 0, theta, phi).real
+            elif ml > 0:
+                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).real
+    elif format == 'quanty':
+        orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
+        spin = np.array([ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1])/2
+        def harm(ml, theta, phi):
+            return sph_harm_y(3, ml, theta, phi)
+    else:
+        raise ValueError("format must be one of 'QE' or 'quanty'")
     
-    # calculate the total spin density another way:
+    theta = np.linspace(0, np.pi, npts)     # polar angle
+    phi = np.linspace(0, 2 * np.pi, npts)   # azimuthal angle
+    theta, phi = np.meshgrid(theta, phi)
     fig3, ax3es = plt.subplots(figsize=(8,8), ncols=2, nrows=2, subplot_kw={'projection': '3d'})
     yt = np.zeros_like(theta, dtype=complex)
     st = np.zeros_like(theta, dtype=complex)
@@ -751,7 +563,7 @@ def plot_density_quantyorder(full_dens, npts=50, fname=None, title='Quanty'):
     for i in range(14):
         for j in range(14):
             pij = full_dens[i,j]
-            y = pij * sph_harm_y(3, orbs[j], theta, phi).conj() * sph_harm_y(3, orbs[i], theta, phi)
+            y = pij * harm(orbs[j], theta, phi).conj() * harm(orbs[i], theta, phi)
             yt += y
             st += y * spin[j]  # should be spin[j].conj(), but they're always real
             lt += y * orbs[j]  # should be orbs[j].conj(), but they're always real
@@ -774,8 +586,8 @@ def plot_density_quantyorder(full_dens, npts=50, fname=None, title='Quanty'):
         
         
     fig3.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=plt.cm.bwr), ax=ax)
-    fname and fig3.savefig(fname + '-charge.pdf')
     title and fig3.suptitle(title)
+    fname and fig3.savefig(fname + '-density.pdf')
     return fig3 
 
 
