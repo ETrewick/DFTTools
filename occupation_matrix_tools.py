@@ -369,26 +369,30 @@ def make_R_complex2real(l=3):
             U[i, m.tolist().index(mp)]  = -1j * (-1)**mp / np.sqrt(2)
     return U
 
-def make_R_quanty2qe():
+def make_R_quanty2qe(L_max=3):
     ''' Build the rotation matrix from Quanty basis to QE basis '''
     # these are not the angular momenta (missing factor of 0.5 from spin) as they are only used for permutation
-    qe_orbs = [+0,+1,-1,+2,-2,+3,-3,+0,+1,-1,+2,-2,+3,-3]  # should be correct from the docs
-    qe_spin = [ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1]
+    # qe_orbs = [+0,+1,-1,+2,-2,+3,-3,+0,+1,-1,+2,-2,+3,-3]  # should be correct from the docs
+    # qe_spin = [ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1]
+    qe_orbs = ([0] + [x for l in range(1, L_max+1) for x in (l, -l)])*2
+    qe_spin = [1]*(L_max*2+1) + [-1]*(L_max*2+1)
     qe_order = list(zip(qe_orbs,qe_spin))
-    quanty_orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
-    # quanty_spin = [-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1] # this one is technically correct
-    # but in quanty we have majority spin down, for some reason, so add a factor of -1 to spin
-    quanty_spin = [ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1]
+    # quanty_orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
+    # # quanty_spin = [-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1] # this one is technically correct
+    # # but in quanty we have majority spin down, for some reason, so add a factor of -1 to spin
+    # quanty_spin = [ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1]
+    quanty_orbs = [m for m in range(-L_max, L_max+1) for _ in (0,1)]
+    quanty_spin = [1, -1] * (2*L_max + 1)
     quanty_order = list(zip(quanty_orbs,quanty_spin))
     # build permutation matrix for reordering the angular momentum basis
     result = []
     for qe in qe_order:
-        c = np.zeros(14)
+        c = np.zeros(L_max*4+2)
         i = quanty_order.index(qe)
         c[i] = 1
         result.append(c)
     # mulitply permutation matrix by the real->complex spherical harmonics transfrom
-    rot = np.asarray(result)@np.kron(make_R_complex2real(l=3), np.identity(2))
+    rot = np.asarray(result)@np.kron(make_R_complex2real(l=L_max), np.identity(2))
     # print(np.allclose(result.conj().T @ result, np.eye(14)))
     return rot
 
@@ -429,27 +433,33 @@ def plot_eigenvectors(occupations, funcs_right, format='QE', npts=50, fname=None
     '''
     title = title or format
     c_axis = c_axis or r_axis
+    L_max = (len(occupations)-2)//4  # ((len(occupations)/2)-1)/2
     if any([a not in ('R','L','S') for a in (r_axis, c_axis, dens_r_axis, dens_c_axis)]) :
         raise ValueError("r_axis, c_axis, dens_r_axis, dens_c_axis must be one of 'R','L','S'")
     if format == 'QE':
-        orbs = [ 0, 1,-1, 2,-2, 3,-3, 0, 1,-1, 2,-2, 3,-3]
-        spin = np.array([ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1])/2
+        # orbs = [ 0, 1,-1, 2,-2, 3,-3, 0, 1,-1, 2,-2, 3,-3]
+        # spin = np.array([ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1])/2
+        orbs = ([0] + [x for l in range(1, L_max+1) for x in (l, -l)])*2
+        spin = [0.5]*(L_max*2+1) + [-0.5]*(L_max*2+1)
         funcs_right = funcs_right.T
         def harm(ml, theta, phi):
             if ml < 0:
-                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).imag
+                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(L_max, np.abs(ml), theta, phi).imag
             elif ml == 0:
-                return sph_harm_y(3, 0, theta, phi).real
+                return sph_harm_y(L_max, 0, theta, phi).real
             elif ml > 0:
-                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).real
+                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(L_max, np.abs(ml), theta, phi).real
     elif format == 'quanty':
-        orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
-        spin = np.array([ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1])/2
+        # orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
+        # spin = np.array([ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1])/2
+        orbs = [m for m in range(-L_max, L_max+1) for _ in (0,1)]
+        spin = [0.5, -0.5] * (2*L_max + 1)
         def harm(ml, theta, phi):
-            return sph_harm_y(3, ml, theta, phi)
+            return sph_harm_y(L_max, ml, theta, phi)
     else:
         raise ValueError("format must be one of 'QE' or 'quanty'")
-    fig, axes = plt.subplots(figsize=(14,5), ncols=5, nrows=3, subplot_kw={'projection': '3d'})
+    cols_rows = {0:(2,2), 1:(3,3), 2:(4,3), 3:(5,3)}[L_max]
+    fig, axes = plt.subplots(figsize=(14,5), ncols=cols_rows[0], nrows=cols_rows[1], subplot_kw={'projection': '3d'})
     
     theta = np.linspace(0, np.pi, npts)     # polar angle
     phi = np.linspace(0, 2 * np.pi, npts)   # azimuthal angle
@@ -535,24 +545,30 @@ def plot_density(full_dens, format='QE', npts=50, fname=None, title=None):
         npts species the number of points in each direction of the angular mesh
     '''
     title = title or format
+    L_max = (len(occupations)-2)//4  # ((len(occupations)/2)-1)/2
     if format == 'QE':
-        orbs = [ 0, 1,-1, 2,-2, 3,-3, 0, 1,-1, 2,-2, 3,-3]
-        spin = np.array([ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1])/2
+        # orbs = [ 0, 1,-1, 2,-2, 3,-3, 0, 1,-1, 2,-2, 3,-3]
+        # spin = np.array([ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1])/2
+        orbs = ([0] + [x for l in range(1, L_max+1) for x in (l, -l)])*2
+        spin = [0.5]*(L_max*2+1) + [-0.5]*(L_max*2+1)
+        funcs_right = funcs_right.T
         def harm(ml, theta, phi):
             if ml < 0:
-                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).imag
+                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(L_max, np.abs(ml), theta, phi).imag
             elif ml == 0:
-                return sph_harm_y(3, 0, theta, phi).real
+                return sph_harm_y(L_max, 0, theta, phi).real
             elif ml > 0:
-                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(3, np.abs(ml), theta, phi).real
+                return np.sqrt(2)*(-1)**(ml) * sph_harm_y(L_max, np.abs(ml), theta, phi).real
     elif format == 'quanty':
-        orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
-        spin = np.array([ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1])/2
+        # orbs = [-3,-3,-2,-2,-1,-1,-0,+0,+1,+1,+2,+2,+3,+3]
+        # spin = np.array([ 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1, 1,-1])/2
+        orbs = [m for m in range(-L_max, L_max+1) for _ in (0,1)]
+        spin = [0.5, -0.5] * (2*L_max + 1)
         def harm(ml, theta, phi):
-            return sph_harm_y(3, ml, theta, phi)
+            return sph_harm_y(L_max, ml, theta, phi)
     else:
         raise ValueError("format must be one of 'QE' or 'quanty'")
-    
+
     theta = np.linspace(0, np.pi, npts)     # polar angle
     phi = np.linspace(0, 2 * np.pi, npts)   # azimuthal angle
     theta, phi = np.meshgrid(theta, phi)
