@@ -126,15 +126,16 @@ def parse_eigen_data_4spin(text):
     
     start = lines.index("     eigenvalues:") + 1
     eigenvalues = np.fromstring(lines[start], sep=' ')
+    ndim =  len(out['eigenvalues'])
 
     start = lines.index("     eigenvectors (columns):") + 1
-    eigenvectors = np.array([np.fromstring(lines[start + i], sep=' ') for i in range(14)])
+    eigenvectors = np.array([np.fromstring(lines[start + i], sep=' ') for i in range(ndim)])
 
     start = lines.index("     occupations, | n_(i1, i2)^(sigma1, sigma2) | real part |:") + 1
-    occupations_real = np.array([np.fromstring(lines[start + i], sep=' ') for i in range(14)])
+    occupations_real = np.array([np.fromstring(lines[start + i], sep=' ') for i in range(ndim)])
 
     start = lines.index("     occupations, | n_(i1, i2)^(sigma1, sigma2) | imag part |:") + 1
-    occupations_imag = np.array([np.fromstring(lines[start + i], sep=' ') for i in range(14)])
+    occupations_imag = np.array([np.fromstring(lines[start + i], sep=' ') for i in range(ndim)])
 
     occupations = occupations_real + 1j * occupations_imag
 
@@ -219,6 +220,9 @@ def parse_eigen_data_2spin(text):
 def plot2s(text):
         plot_eigenvectors(*parse_eigen_data_2spin(text)[:2], 'QE', npts=50, fname=None); plt.show()
 
+def plot4s(text):
+        plot_eigenvectors(*parse_eigen_data_4spin(text)[:2], 'QE', npts=50, fname=None); plt.show()
+
 '''
     Functions to directly read and write the density matrix of QE (occup.txt)
     These functions are designed to be paired with 
@@ -302,20 +306,20 @@ def writeocc_4f_5d(fname, d_4f, d_5d):
         writeocc_2spin(f, d_4f)
         writeocc_2spin(f, d_5d)
 
-def load_quanty_density(dens_full_file):
+def load_quanty_density(dens_full_file, nstates=14):
     with open(dens_full_file,'r') as f:
-        full_dens = np.loadtxt(f, dtype=complex, max_rows=14)
+        full_dens = np.loadtxt(f, dtype=complex, max_rows=nstates)
         f.readline()
         f.readline()
         occupations = np.loadtxt(f, dtype=complex, max_rows=1)
         f.readline()
-        funcs_right = np.loadtxt(f, dtype=complex, max_rows=14)
+        funcs_right = np.loadtxt(f, dtype=complex, max_rows=nstates)
     return full_dens, occupations, funcs_right
 
 
-def make_CG_matrix(doPrint=True):
+def make_CG_matrix(l=3,doPrint=True):
     doPrint and print('Generate Clebsch-Gordan matrix for f-orbitals')
-    l, s = 3, sp.S(1)/2
+    l= sp.S(1)/2
     ml_ms_basis = [(ml, ms) for ml in range(-l, l+1) for ms in [-s,  s]]
     j_mj_basis = [(j, mj) for j in [l-s, l+s] for mj in [sp.S(m) for m in np.arange(-j, j+1, 1)]]
     
@@ -545,7 +549,7 @@ def plot_density(full_dens, format='QE', npts=50, fname=None, title=None):
         npts species the number of points in each direction of the angular mesh
     '''
     title = title or format
-    L_max = (len(occupations)-2)//4  # ((len(occupations)/2)-1)/2
+    L_max = (len(full_dens)-2)//4  # ((len(occupations)/2)-1)/2
     if format == 'QE':
         # orbs = [ 0, 1,-1, 2,-2, 3,-3, 0, 1,-1, 2,-2, 3,-3]
         # spin = np.array([ 1, 1, 1, 1, 1, 1, 1,-1,-1,-1,-1,-1,-1,-1])/2
@@ -576,8 +580,8 @@ def plot_density(full_dens, format='QE', npts=50, fname=None, title=None):
     yt = np.zeros_like(theta, dtype=complex)
     st = np.zeros_like(theta, dtype=complex)
     lt = np.zeros_like(theta, dtype=complex)
-    for i in range(14):
-        for j in range(14):
+    for i in range(len(full_dens)):
+        for j in range(len(full_dens)):
             pij = full_dens[i,j]
             y = pij * harm(orbs[j], theta, phi).conj() * harm(orbs[i], theta, phi)
             yt += y

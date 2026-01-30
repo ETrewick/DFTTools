@@ -1,4 +1,4 @@
-
+# https://matplotlib.org/stable/gallery/lines_bars_and_markers/multicolored_line.html
 import matplotlib.pyplot as plt
 import numpy as np
 
