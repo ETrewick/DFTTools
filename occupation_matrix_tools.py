@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import sph_harm_y
@@ -9,51 +10,148 @@ np.set_printoptions(precision=3, suppress=True, linewidth=10000000)
 
 
 
+
 def main():
-    '''
-        I'm not even removely consistent with names. The density matrix is sometimes called the occupations matrix (O)
-        The "natural orbtials" are the matrix which diagonalises the density matrix and is often called eigenvectors (evecs or evecs_right), or R (for rotation matrix)
-        The the occupations of this matrix are sometimes called occupations, or simply eigenvalues (evals, or E) 
+    parser = argparse.ArgumentParser(
+        description="Occupation matrix tools"
+    )
 
-        I can only say that I'm sorry, and that in literature it's just as bad (although most papers are somewhat internally consistent)
+    parser.add_argument(
+        "--quanty",
+        action="append",
+        metavar="FILE",
+        help="Quanty density file(s). Can be repeated."
+    )
 
-        For testing, this line is helpful:
-    '''
+    parser.add_argument(
+        "--qe",
+        nargs="+",
+        action=QEAction,
+        metavar=("FILE", "INT"),
+        help="QE density file followed by the dimensions l of each manifild. Use negative l to discard. Can be repeated."
+    )
+    parser.add_argument(
+        "--nspin",
+        type=int,
+        choices=[2, 4],
+        default=2,
+        help="Number of spins. Must be 2 or 4."
+    )
+    parser.add_argument(
+        '--savefigs', 
+        action='store_true',
+        help='Save figures'
+    )
+    parser.add_argument(
+        '--filetype',
+        type=str,
+        # choices=['pdf', 'png', 'eps'],  # restrict to these types
+        default='png',                  # optional default
+        help='File type/extension to save the figure '
+    )
 
-    # load a starting point from QE (we need the 5d electron density matrix)
-    path_prefix='/home/ludoric/Documents/PhD_stuff/quanty/QE_calc_from_quanty/'
-    qe_occup_fname = path_prefix+'SmN_paw/it2_edited-occup.txt'
-    qe_dens_4f, qe_dens_5d = readocc_4f_5d(qe_occup_fname)
-    # for plotting I have to diagonalise the QE one
-    qe_E, qe_R = make_diagonal(qe_dens_4f)
-    qe_figs = plot_eigenvectors(qe_E, qe_R, 'QE', npts=50, fname=None)
-    
-
-    # load the output from quanty
-    quanty_dens_fname = path_prefix+'Dy_2_Density_matrix_full.txt'
-    quanty_4f_dens, quanty_4f_evals, quanty_4f_evecs = load_quanty_density(quanty_dens_fname)
-    qu_figs = plot_eigenvectors(quanty_4f_evals, quanty_4f_evecs, 'quanty', npts=50, fname=None)
-
-    
-    # note that the QE and Quanty arrays use different basis functions, so we must perform a rotation between them
-    quanty_4f_dens_in_qe = convertquanty2qe(quanty_4f_dens)
-    # additionally QE wants this to be all real (lose all angular momentum?)
-    quanty_4f_dens_in_qe_real = 0.5 * (quanty_4f_dens_in_qe + quanty_4f_dens_in_qe.conj())
-
-    # check that the rotation and plotting works correctly
-    qu_E, qu_R = make_diagonal(quanty_4f_dens_in_qe_real)
-    qu_figs2 = plot_eigenvectors(qu_E, qu_R, 'QE', npts=50, fname=None, title='quanty in QE format')
-
-    # write the bloody thing back out for QE
-    qe_occup_out_fname = path_prefix+'occup.txt-output'
-    writeocc_4f_5d(qe_occup_out_fname, quanty_4f_dens_in_qe_real, qe_dens_5d)
+    args = parser.parse_args()
 
 
-    # try not to cry when it doesn't work
+    if not args.quanty and not args.qe:
+        parser.error("No input provided. Use --quanty or --qe.")
 
-    # qu_figs2 = plot_density(quanty_4f_dens, 'quanty', npts=50, fname=None)
+    if args.quanty:
+        for fname in args.quanty:
+            quanty_4f_dens, quanty_4f_evals, quanty_4f_evecs = load_quanty_density(fname)
+            outfname = fname if args.savefigs else None
+            plot_eigenvectors(
+                quanty_4f_evals,
+                quanty_4f_evecs,
+                "quanty",
+                npts=50,
+                fname=outfname,
+                ftype=args.filetype
+            )
+
+    if args.qe:
+        for fname, integers in args.qe:
+            qe_dens_list = []
+            readocc = {2: readocc_2spin, 4: readocc_4spin}[args.nspin]
+            with open(fname, 'r') as f:
+                for l in integers:
+                    ndim = np.abs(l)*2+1
+                    qe_dens_list.append(readocc(f, ndim))
+            for i, (l, dens) in enumerate(zip(integers, qe_dens_list)):
+                if l <= 0: # don't plot negative l orbitals (or s orbitals, lol)
+                    continue
+                # for plotting I have to diagonalise the QE one
+                qe_E, qe_R = make_diagonal(dens)
+                outfname = f'{fname}_{i+1}L{l}'if args.savefigs else None
+                qe_figs = plot_eigenvectors(qe_E, qe_R, 'QE', npts=50, fname=outfname, ftype=args.filetype)
 
     plt.show()
+
+
+class QEAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if len(values) < 2:
+            parser.error("--qe requires: FILE INT [INT ...]")
+
+        filename = values[0]
+
+        try:
+            integers = [int(v) for v in values[1:]]
+        except ValueError:
+            parser.error("All arguments after FILE must be integers.")
+
+        # Append to list (since we allow multiple --qe)
+        current = getattr(namespace, self.dest, None)
+        if current is None:
+            current = []
+        current.append((filename, integers))
+
+        setattr(namespace, self.dest, current)
+
+    # '''
+    #     I'm not even removely consistent with names. The density matrix is sometimes called the occupations matrix (O)
+    #     The "natural orbtials" are the matrix which diagonalises the density matrix and is often called eigenvectors (evecs or evecs_right), or R (for rotation matrix)
+    #     The the occupations of this matrix are sometimes called occupations, or simply eigenvalues (evals, or E) 
+
+    #     I can only say that I'm sorry, and that in literature it's just as bad (although most papers are somewhat internally consistent)
+
+    #     For testing, this line is helpful:
+    # '''
+
+    # # load a starting point from QE (we need the 5d electron density matrix)
+    # path_prefix='/home/ludoric/Documents/PhD_stuff/quanty/QE_calc_from_quanty/'
+    # qe_occup_fname = path_prefix+'SmN_paw/it2_edited-occup.txt'
+    # qe_dens_4f, qe_dens_5d = readocc_4f_5d(qe_occup_fname)
+    # # for plotting I have to diagonalise the QE one
+    # qe_E, qe_R = make_diagonal(qe_dens_4f)
+    # qe_figs = plot_eigenvectors(qe_E, qe_R, 'QE', npts=50, fname=None)
+    # 
+
+    # # load the output from quanty
+    # quanty_dens_fname = path_prefix+'Dy_1_Density_matrix_full.txt'
+    # quanty_4f_dens, quanty_4f_evals, quanty_4f_evecs = load_quanty_density(quanty_dens_fname)
+    # qu_figs = plot_eigenvectors(quanty_4f_evals, quanty_4f_evecs, 'quanty', npts=50, fname=None)
+
+    # 
+    # # note that the QE and Quanty arrays use different basis functions, so we must perform a rotation between them
+    # quanty_4f_dens_in_qe = convertquanty2qe(quanty_4f_dens)
+    # # additionally QE wants this to be all real (lose all angular momentum?)
+    # quanty_4f_dens_in_qe_real = 0.5 * (quanty_4f_dens_in_qe + quanty_4f_dens_in_qe.conj())
+
+    # # check that the rotation and plotting works correctly
+    # qu_E, qu_R = make_diagonal(quanty_4f_dens_in_qe_real)
+    # qu_figs2 = plot_eigenvectors(qu_E, qu_R, 'QE', npts=50, fname=None, title='quanty in QE format')
+
+    # # write the bloody thing back out for QE
+    # qe_occup_out_fname = path_prefix+'occup.txt-output'
+    # writeocc_4f_5d(qe_occup_out_fname, quanty_4f_dens_in_qe_real, qe_dens_5d)
+    # writeocc_4spin('occup.txt-output4spin', quanty_4f_dens_in_qe_real)
+
+    # # try not to cry when it doesn't work
+
+    # # qu_figs2 = plot_density(quanty_4f_dens, 'quanty', npts=50, fname=None)
+
+    # plt.show()
 
 
 
@@ -214,6 +312,7 @@ def parse_eigen_data_2spin(text):
     # I am too lazy as it's easier (to write) to re-diagonalise the occupations
     eigenvalues, eigenvectors = make_diagonal(occupations)
     return eigenvalues, eigenvectors, occupations
+
 # testcase for the above: np.testing.assert_allclose(parse_eigen_data_2spin(parse_eigen_data_2spin.__doc__)[0], np.array([0.   , 0.004, 0.005, 0.005, 0.013, 0.014, 0.015, 0.034, 0.037, 0.998, 0.999, 0.999, 1.   , 1.   ]),atol=5e-4)
 
 
@@ -428,7 +527,7 @@ def generate_ns_eigenvalues_for_desired_basis_occupations(initial_hubbard_text_d
     return request
 
 
-def plot_eigenvectors(occupations, funcs_right, format='QE', npts=50, fname=None, title=None, r_axis='R', c_axis='S', dens_r_axis='R', dens_c_axis='R'):
+def plot_eigenvectors(occupations, funcs_right, format='QE', npts=50, fname=None, title=None, ftype='png', r_axis='R', c_axis='S', dens_r_axis='R', dens_c_axis='R'):
     ''' plots the eigenvectors that diagonalise a density matrix, and the whole density matrix
         format must be one of 'QE' or 'quanty'
         fname is the prefix of the output file
@@ -536,12 +635,13 @@ def plot_eigenvectors(occupations, funcs_right, format='QE', npts=50, fname=None
     title and fig.suptitle(title)
     title and fig2.suptitle(title)
     # fig2.savefig(dens_full_file.split['.'][0] + '-charge.pdf')
-    fname and fig2.savefig(fname + '-charge_edit.pdf')
-    fname and fig2.savefig(fname + '-charge_edit.png', dpi=200)
+    fname and fig2.savefig(fname + '-justdens.'+ftype, dpi=300)
+    # fname and fig2.savefig(fname + '-charge_edit.png', dpi=200)
+    fname and fig.savefig(fname + '-natural.'+ftype, dpi=300)
     
     return fig, fig2
 
-def plot_density(full_dens, format='QE', npts=50, fname=None, title=None):
+def plot_density(full_dens, format='QE', npts=50, fname=None, title=None, ftype='png'):
     ''' plots the the whole density matrix
         format must be one of 'QE' or 'quanty'
         fname is the prefix of the output file
@@ -607,7 +707,7 @@ def plot_density(full_dens, format='QE', npts=50, fname=None, title=None):
         
     fig3.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=plt.cm.bwr), ax=ax)
     title and fig3.suptitle(title)
-    fname and fig3.savefig(fname + '-density.pdf')
+    fname and fig3.savefig(fname + '-density.'+ftype, dpi=300)
     return fig3 
 
 
