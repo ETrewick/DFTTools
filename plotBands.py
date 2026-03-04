@@ -197,6 +197,54 @@ def routelablesXPointsFromString(route, rap, ks):
     kpoints_n += ['?']*(len(kpoints_x) - len(kpoints_n))
     return xaxis, kpoints_x, kpoints_n
 
+def slice_on_nonzero(rap, *arrays):
+    ''' Usage:
+    slices = slice_on_nonzero(rap, ks, dup.T, ddw.T)
+    '''
+    arrays = list(arrays)
+    toslice = [rap]+list(arrays) 
+    result = [[] for _ in toslice]
+    ends, = np.nonzero(rap)
+    for start, stop in zip(ends[:-1],ends[1:]+1):
+        if stop-start <= 2:
+            continue
+        for inp, outp in zip(toslice, result):
+            outp.append(inp[start:stop])
+    return result
+
+def seperate_path_labels(path):
+    # uses different syntax to the other - duplicates path labels so that 'XGX' becomes ['X-G','G-X'] etc.
+    ls = '%'.join(list(path)).replace('%_%','_').replace('%|%','|').split('%')
+    ls = [f"{a.split('|')[-1]}-{b.split('|')[0]}" for a, b in zip(ls[:-1], ls[1:])]
+    return ls
+
+def reorder_segments(originaldata, originalpath, newpath):
+    ''' Usage:
+    newpath = 'X_yW_zX_xW_zX_y'
+    newrap, newks, newdupT = reorder_segments((rap, ks, dup.T), path, newpath)
+    '''
+    osegments = seperate_path_labels(originalpath)
+    nsegments = seperate_path_labels(newpath)
+    slices = slice_on_nonzero(*originaldata)
+    reverse_seg_name = lambda x: (s:=x.split('-'))[1]+'-'+s[0]
+    
+    result = []
+    for arr in slices:
+        parts = []
+        for nseg in nsegments:
+            if nseg in osegments:
+                i = osegments.index(nseg)
+                reverse = False
+                parts.append(arr[i])
+            elif (rnseg := reverse_seg_name(nseg)) in osegments:
+                i = osegments.index(rnseg)
+                reverse = True
+                parts.append(arr[i][::-1])
+            else:
+                raise ValueError(f'Segment "{nseg}" not in "{originalpath}"')
+        result.append(np.concatenate(parts, axis=0))
+    return result
+
 
 def plotDOS(datdos, ax=None, onY=False, nolegend=False, colour=None):
     if ax:

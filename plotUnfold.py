@@ -32,10 +32,10 @@ FIGSIZE['page'] = (FIGSIZE['page_w'], FIGSIZE['column_w']*2/3)
 def load_bands_xml(*, nspin, nbnd, nkpt, orb_fnames): 
     norb = len(orb_fnames)
     
-    E = np.zeros((nspin, nbnd, nkpt))
-    P = np.zeros((nspin, nbnd, nkpt))
-    AP = np.zeros((norb, nspin, nbnd, nkpt))
-    K = np.zeros((nkpt, 3))
+    E = np.zeros((nspin, nbnd, nkpt)) # eigen energy
+    P = np.zeros((nspin, nbnd, nkpt)) # projection weight
+    AP = np.zeros((norb, nspin, nbnd, nkpt)) # atomic projection weight
+    K = np.zeros((nkpt, 3)) # k point position
     for i, orb in enumerate(orb_fnames):
         for fname in glob.glob(f'{orb}.dat.save/*.xml'):
             with open(fname,'r') as f:
@@ -49,6 +49,89 @@ def load_bands_xml(*, nspin, nbnd, nkpt, orb_fnames):
                 K[ik-1, :] = data['K-POINT_COORDS'].text.split()
             AP[i, ispin-1, :, ik-1] = data.ATOMIC_PROJECTIONS.text.split()
     return E, P, AP, K
+
+
+def load_bands_kproj(*, fname='bs_projected.dat'): 
+    data=open(fname,'r')
+    info=data.readline().split()
+    nkpt = int(info[0])
+    nspin   = int(info[1])
+    E_fermi = float(info[2])
+    
+    # information about where Kpoints are contiguous
+    ksplits = int(data.readline().split()[0])
+    ksplit_pos = [0]
+    while len(ksplit_pos)<ksplits:
+        ksplit_pos.extend(map(float,data.readline().split()))
+    ksplit_pos = np.array(ksplit_pos, dtype=float)
+   
+    position = data.tell() # cheeky trick to find out the number of bands
+    nbnd = int(data.readline().split()[1])
+    data.seek(position)
+
+    E = np.zeros((nspin, nbnd, nkpt),dtype=float) # eigen energy
+    P = np.zeros((nspin, nbnd, nkpt),dtype=float) # projection weight
+    # AP = np.empty((norb, nspin, nbnd, nkpt)) # atomic projection weight
+    K = np.zeros((nkpt, 3),dtype=float) # k point position
+    K_linear = np.zeros(nkpt,dtype=float) # k point position on the axis
+
+    for ispin in range(nspin):
+        for ik in range(nkpt):
+            info = data.readline().split()
+            # ik+1 == info[0]
+            # nbnd == info[1]
+            K[ik, :] = list(map(float, info[3:6]))
+            K_linear[ik] = float(info[6])
+            E[ispin,:,ik], P[ispin,:,ik] = np.loadtxt(data, dtype=float, max_rows=nbnd, unpack=True)
+    return E, P, None, K, K_linear
+
+
+
+def reorder_kpath(E, P, AP, critical_indices, new_path):
+    """
+    Reorder E, P and AP along k-direction using critical segment definitions.
+
+    Parameters
+    ----------
+    E : ndarray
+        Shape (nspin, nbnd, nk)
+    P : ndarray
+        Shape (nspin, nbnd, nk)
+    AP : ndarray
+        Shape (nproj, nspin, nbnd, nk)
+    critical_indices : array-like
+        Cumulative k-index boundaries
+    new_path : list of tuples
+        [(segment_index, reverse_bool), ...]
+
+    Returns
+    -------
+    E_new, P_new, AP_new, new_critical_indices
+    """
+    ci = np.asarray(critical_indices)
+    E_segments  = []
+    P_segments  = []
+    AP_segments = []
+    lengths     = []
+    for seg_idx, reverse in new_path:
+        k0, k1 = ci[seg_idx], ci[seg_idx + 1]
+        E_seg  = E[...,  k0:k1]
+        P_seg  = P[...,  k0:k1]
+        AP_seg = AP[..., k0:k1]
+        if reverse:
+            E_seg  = E_seg[...,  ::-1]
+            P_seg  = P_seg[...,  ::-1]
+            AP_seg = AP_seg[..., ::-1]
+        E_segments.append(E_seg)
+        P_segments.append(P_seg)
+        AP_segments.append(AP_seg)
+        lengths.append(k1 - k0)
+    E_new  = np.concatenate(E_segments,  axis=-1)
+    P_new  = np.concatenate(P_segments,  axis=-1)
+    AP_new = np.concatenate(AP_segments, axis=-1)
+    new_critical_indices = np.cumsum((0,) + tuple(lengths), dtype=int)
+    return E_new, P_new, AP_new, new_critical_indices
+
 
 def save_bands_npy(*, E, P, AP, K, fname='rawbands.npz'):
     np.savez_compressed(fname, E=E, P=P, AP=AP, K=K)
@@ -188,9 +271,10 @@ def colour_overlay(*, R, colours, orbder):
 
 
 def plot_RGB(*, RGB, Emin, Emax, critical_indices, critical_labels,
-             orb_labels=None, colours=None, K=None, nspin=None, showGrid=True, showZeroE=True):
+             orb_labels=None, colours=None, K=None, nspin=None, showGrid=True, showZeroE=True,
+             figsize=(FIGSIZE['page_w'], 2/3*FIGSIZE['page_w'])):
     ''' plot '''
-    fig, ax = plt.subplots(layout='constrained', figsize=(FIGSIZE['page_w'], 2/3*FIGSIZE['page_w']))
+    fig, ax = plt.subplots(layout='constrained', figsize=figsize)
     ax.imshow(RGB.transpose((1, 0, 2)), origin='lower', aspect='auto',
               extent=(0, critical_indices[-1], Emin, Emax))
     # ax.margins(x=0, y=0)
@@ -218,7 +302,7 @@ def plot_RGB(*, RGB, Emin, Emax, critical_indices, critical_labels,
     
     if orb_labels is not None and colours is not None:
         # add colour legend
-        spins = '↑↓' if nspin == 2 else ''
+        spins = '↑↓' if nspin == 2 else ' '
         patches = [mpatches.Patch(color=c, label=f'{o} {s}')
                    for cp, o in zip(colours, orb_labels) for c, s in zip(cp, spins)]
         fig.legend(handles=patches, loc='outside upper center', ncols=len(colours)*nspin)
