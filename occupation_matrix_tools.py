@@ -1,3 +1,4 @@
+import sys
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
@@ -54,7 +55,7 @@ def main():
 
 
     if not args.quanty and not args.qe:
-        parser.error("No input provided. Use --quanty or --qe.")
+        parser.error("No input provided. Use --quanty or --qe")
 
     if args.quanty:
         for fname in args.quanty:
@@ -73,7 +74,7 @@ def main():
         for fname, integers in args.qe:
             qe_dens_list = []
             readocc = {2: readocc_2spin, 4: readocc_4spin}[args.nspin]
-            with open(fname, 'r') as f:
+            with open(fname, 'rb') as f:
                 for l in integers:
                     ndim = np.abs(l)*2+1
                     qe_dens_list.append(readocc(f, ndim))
@@ -322,6 +323,29 @@ def plot2s(text):
 def plot4s(text):
         plot_eigenvectors(*parse_eigen_data_4spin(text)[:2], 'QE', npts=50, fname=None); plt.show()
 
+
+
+
+def read_token(buf):
+    ''' python is a garbage language, and does not support reading a file by token delimited by anything other than a newline character
+    '''
+    token = bytearray()
+    # skip leading whitespace
+    while True:
+        b = buf.peek(1)[:1]
+        if not b:
+            return ""
+        if b not in b" \n\t\r":
+            break
+        buf.read(1)
+    # read token
+    while True:
+        b = buf.peek(1)[:1]
+        if not b or b in b" \n\t\r":
+            break
+        token += buf.read(1)
+    return token.decode()
+
 '''
     Functions to directly read and write the density matrix of QE (occup.txt)
     These functions are designed to be paired with 
@@ -332,9 +356,16 @@ def readocc_4spin(fname, ndim):
     # ndim = l*2+1
     # for 4f orbitals ndim = 4*2+1 = 7
     dens = np.zeros((ndim*2,ndim*2),dtype=complex)
-    d = np.genfromtxt(fname, dtype=complex, delimiter='%', max_rows=(ndim*2)**2,
-                      converters={0: lambda s: complex(*map(np.float128, s.strip('()').split(',')))},
-                      ).reshape((ndim*4,ndim))
+    # d = np.genfromtxt(fname, dtype=complex, delimiter='%', max_rows=(ndim*2)**2,
+    #                   converters={0: lambda s: complex(*map(np.float128, s.strip('()').split(',')))},
+    #                   ).reshape((ndim*4,ndim))
+    ctx = nullcontext(fname) if hasattr(fname, "write") else open(str(fname), "rb")
+    d = []
+    with ctx as f:
+        for _ in range((ndim*2)**2):
+            t = read_token(f)
+            d.append(complex(*map(float, t[1:-1].split(','))) if t else None)
+    d = np.array(d,dtype=complex).reshape((ndim*4,ndim))
     dens[   0:ndim,      0:ndim  ] = d[     0:ndim,  :]
     dens[ndim:ndim*2,    0:ndim  ] = d[  ndim:ndim*2,:]
     dens[   0:ndim,   ndim:ndim*2] = d[ndim*2:ndim*3,:]
@@ -350,7 +381,8 @@ def writeocc_4spin(fname, dens):
         dens[ndim:, ndim:]           # bottom-right
     ])
     # data = d.reshape((4*ndim, ndim))
-    data = np.vstack((d, np.zeros_like(d))).ravel()
+    # data = np.vstack((d, np.zeros_like(d))).ravel()
+    data = d.ravel() # it turns out that the zero matricies are writen out: all front, zeroes(all front), all back, zeroes(all back)
     np.savetxt(
         fname,
         data,
@@ -363,11 +395,12 @@ def readocc_2spin(fname, ndim):
     # for 4f orbitals ndim = 4*2+1 = 7
     dens = np.zeros((ndim*2,ndim*2),dtype=complex)
     # d = np.loadtxt(fname,max_rows=int(np.ceil(ndim*ndim*2*2/3))).ravel()[:ndim*ndim*2].reshape((ndim*2,ndim))
-    ctx = nullcontext(fname) if hasattr(fname, "write") else open(str(fname), "r")
+    ctx = nullcontext(fname) if hasattr(fname, "read") else open(str(fname), "rb")
     d = []
     with ctx as f:
-        while len(d)< ndim*ndim*2*2:
-            d.extend(np.fromstring(f.readline(), sep=' '))
+        while len(d)< ndim*ndim*2:
+            # d.extend(np.fromstring(f.readline(), sep=' '))
+            d.append(float(read_token(f)))
     d = np.asarray(d)[:ndim*ndim*2].reshape((ndim*2,ndim))
 
     dens[   0:ndim,      0:ndim  ] = d[     0:ndim,  :]
@@ -383,7 +416,9 @@ def writeocc_2spin(fname, dens):
         dens[ndim:, ndim:]           # bottom-right
     ])
     # data = d.reshape((2*ndim, ndim))
-    data = np.vstack((d, np.zeros_like(d))).ravel().real # cast to real!!!!!!!!!!!
+    # cast to real!!!!!!!!!!!
+    # data = np.vstack((d, np.zeros_like(d))).ravel().real
+    data = d.ravel().real # it turns out that the zero matricies are writen out: all front, zeroes(all front), all back, zeroes(all back)
     ctx = nullcontext(fname) if hasattr(fname, "write") else open(str(fname), "w")
     with ctx as f:
         for i in range(0, len(data), 3):
@@ -397,13 +432,18 @@ def writeocc_2spin(fname, dens):
     # )
 
 def readocc_4f_5d(fname):
-    with open(fname, 'r') as f:
-        return readocc_2spin(f, 7), readocc_2spin(f, 5)
+    with open(fname, 'rb') as f:
+        d_4f = readocc_2spin(f, 7)
+        readocc_2spin(f, 7) # all zeroes
+        d_5d = readocc_2spin(f, 5)
+    return d_4f, d_5d
 
 def writeocc_4f_5d(fname, d_4f, d_5d):
     with open(fname, 'w') as f:
         writeocc_2spin(f, d_4f)
+        writeocc_2spin(f, d_4f*0.0) # write zeroes
         writeocc_2spin(f, d_5d)
+        writeocc_2spin(f, d_5d*0.0)  # write zeroes
 
 def load_quanty_density(dens_full_file, nstates=14):
     with open(dens_full_file,'r') as f:
