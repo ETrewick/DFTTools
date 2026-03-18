@@ -1,5 +1,6 @@
 #! /usr/bin/python3
 import numpy as np
+import argparse
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 # import bandplot_kpoints as kp
@@ -11,7 +12,58 @@ from .multicoloredline import colored_line
 mpl.rcParams['savefig.format'] = 'pdf'
 mpl.rcParams['lines.linewidth'] = 1
 
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Plot band structure from DFTTools output."
+    )
+
+    parser.add_argument(
+        "fermi",
+        type=float,
+        help="Fermi energy (eV)"
+    )
+    parser.add_argument(
+        "path",
+        type=str,
+        help="K-point path (e.g. 'ΓXWKΓLUWLK|UX')"
+    )
+    parser.add_argument(
+        "--title",
+        type=str,
+        default='',
+        help="Output title (used for PDF filename)"
+    )
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default="",
+        help="Optional file prefix"
+    )
+
+    parser.add_argument(
+        "--hideplot",
+        action="store_true",
+        help="Do not display the plot window"
+    )
+
+    args = parser.parse_args()
+
+    fermi = args.fermi
+    prefix = args.prefix
+
+    _, ks, rap = readBandFile(prefix + 'S1.bands.rap')
+    dup = readBandFile(prefix + 'S1.bands')[0] - fermi
+    ddw = readBandFile(prefix + 'S2.bands')[0] - fermi
+
+    f, ax = plotBands(args.path, rap, ks, dup, ddw)
+    
+    if args.title:
+        f.savefig(f"{args.title}_bands.pdf")
+
+    if not args.hideplot:
+        plt.show()
+
     # dat = readBandFile('bands_out_GdN-FCC.bands')
     # dup = readBandFile('bands2_GdN-FCC-S1.bands')
     # ddown = readBandFile('bands2_GdN-FCC-S2.bands')
@@ -34,41 +86,41 @@ def main():
     # bands = readBandFile('Brel.bands') - 13.9718
     # proj = readBandFile('Brel.bands.3') 
     
-    import sys 
-    if len(sys.argv)<=2:
-        print('syntax: plotBands [Fermi Energy] [title] [path], (optional [prefix])')
-        print("eg. 'python -m DFTTools_TedTrewick.plotBands 14.0699 GdN_B GdN-")
-    fermi = float(sys.argv[1])
-    path = sys.argv[2].strip() # 'ΓXWKΓLUWLK|UX'
-    title = sys.argv[3].strip()
-    if len(sys.argv) > 4:
-        prefix = sys.argv[4].strip()
-    else:
-        prefix = ''
-    _, ks, rap = readBandFile(prefix+'S1.bands.rap')
-    dup = readBandFile(prefix+'S1.bands')[0] - fermi  # 8.0736 # 4.5181
-    ddw = readBandFile(prefix+'S2.bands')[0] - fermi  # 8.0736 # 4.5181
-    f, ax = plotBands(path, rap, ks, dup, ddw)
-    # ax.set_xlim(ax.get_xticks()[0], ax.get_xticks()[5])
-    # f.set_figwidth(3)
-    # f.set_figheight(4)
-    # ax.legend().set_visible(False)
-    f.savefig(f'{title}_bands.pdf')
-    plt.show()
-    # bandD = loadLotsOfData('./', './fermi.tsv', orbital='4f')
-    # rap, _ = readBandFile('GdN-HB1-v70_Gd-4f_10.0-5d_6.0_-S2.bands.rap')
-    # f, ax = plotKvsHU(bandD, rap, 'ΓXWKΓ', kpoint='X', individual=False, orbital='Gd-4f')
-    # f.savefig('GdN_HU1.pdf', bbox_inches='tight')
-    # plt.show() # 7.8eV below the fermi level is Gd-4f=5.95eV
-    return
-    _, ks, rap = readBandFile('GdN_B-S1.bands.rap')
-    dup = readBandFile('GdN_B-S1.bands')[0] - 13.9718
-    ddw = readBandFile('GdN_B-S2.bands')[0] - 13.9718
-    f, ax = plotBands('ΓXWKΓLUWLK|UX', rap, ks, dup, ddw)
-    # f, ax = plotSpinorBands('ΓXWKΓLUWLK|UX', rap, bands, proj, ylim=(-6,6))
-    # ax.set_ylim((-15, 15))
-    f.savefig('GdN_B_Bands.pdf')
-    plt.show()
+    # import sys 
+    # if len(sys.argv)<=2:
+    #     print('syntax: plotBands [Fermi Energy] [title] [path], (optional [prefix])')
+    #     print("eg. 'python -m DFTTools_TedTrewick.plotBands 14.0699 GdN_B GdN-")
+    # fermi = float(sys.argv[1])
+    # path = sys.argv[2].strip() # 'ΓXWKΓLUWLK|UX'
+    # title = sys.argv[3].strip()
+    # if len(sys.argv) > 4:
+    #     prefix = sys.argv[4].strip()
+    # else:
+    #     prefix = ''
+    # _, ks, rap = readBandFile(prefix+'S1.bands.rap')
+    # dup = readBandFile(prefix+'S1.bands')[0] - fermi  # 8.0736 # 4.5181
+    # ddw = readBandFile(prefix+'S2.bands')[0] - fermi  # 8.0736 # 4.5181
+    # f, ax = plotBands(path, rap, ks, dup, ddw)
+    # # ax.set_xlim(ax.get_xticks()[0], ax.get_xticks()[5])
+    # # f.set_figwidth(3)
+    # # f.set_figheight(4)
+    # # ax.legend().set_visible(False)
+    # f.savefig(f'{title}_bands.pdf')
+    # plt.show()
+    # # bandD = loadLotsOfData('./', './fermi.tsv', orbital='4f')
+    # # rap, _ = readBandFile('GdN-HB1-v70_Gd-4f_10.0-5d_6.0_-S2.bands.rap')
+    # # f, ax = plotKvsHU(bandD, rap, 'ΓXWKΓ', kpoint='X', individual=False, orbital='Gd-4f')
+    # # f.savefig('GdN_HU1.pdf', bbox_inches='tight')
+    # # plt.show() # 7.8eV below the fermi level is Gd-4f=5.95eV
+    # return
+    # _, ks, rap = readBandFile('GdN_B-S1.bands.rap')
+    # dup = readBandFile('GdN_B-S1.bands')[0] - 13.9718
+    # ddw = readBandFile('GdN_B-S2.bands')[0] - 13.9718
+    # f, ax = plotBands('ΓXWKΓLUWLK|UX', rap, ks, dup, ddw)
+    # # f, ax = plotSpinorBands('ΓXWKΓLUWLK|UX', rap, bands, proj, ylim=(-6,6))
+    # # ax.set_ylim((-15, 15))
+    # f.savefig('GdN_B_Bands.pdf')
+    # plt.show()
 
     # SmN - Paramagnetic phase 1.3ev from fermi measured from (5d-sup 5d-sdw)
 
@@ -77,7 +129,7 @@ def main():
 def readBandFile(fname):
     with open(fname, 'r') as f:
         nbnd = nks = 0
-        line = f.readline().split()
+        line = f.readline().replace('=', ' ').split()
         for i in range(len(line)):
             if 'nbnd' in line[i]:
                 nbnd = int(line[i+1].strip(','))
